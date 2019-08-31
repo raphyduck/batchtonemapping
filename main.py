@@ -2,6 +2,7 @@ import os
 from pymediainfo import MediaInfo
 import configparser
 import ast
+import logging
 import time
 import pathlib
 def getvcodec(filename):
@@ -25,7 +26,7 @@ def getbit(filename):
 def getacodec(filename):
     media_info = MediaInfo.parse(filename)
     for track in media_info.tracks:
-        if track.track_type == 'Aduio':
+        if track.track_type == 'Audio':
             return(track.format)
     return(False)
 def getoptivcodec(codec, hq):
@@ -103,13 +104,12 @@ def listgen(info):
     return(output)
 
 def isVideo(file):
-    filename, ext = file.split('.')
+    try:
+        filename, ext = file.rsplit(".", 1)
+    except:
+        filename, ext = file, ''
     if ext in listgen('videoext'):
-        print("Video")
         return(True)
-    print(listgen(getconfig("videoext")))
-    print(ext)
-    print("!video")
     return(False)
 
 def isHDR(filename):
@@ -119,45 +119,50 @@ def isHDR(filename):
     bit = getbit(filename)
     try:
         if "BT.2020" in color:
-            print("{} uses BT.2020 color space and is HDR.".format(filename))
+            logging.info("{} uses BT.2020 color space and is HDR.".format(filename))
             return(True)
     except:
-        print("Warning No color_primaries String in {}".format(filename))
+        logging.info("Warning No color_primaries String in {}".format(filename))
     try:
         if "10" in bit:
-            print("{} uses 10 bit color and is HDR.".format(filename))
+            logging.info("{} uses 10 bit color and is HDR.".format(filename))
             return(True)
     except:
-        print("Warning No bit_depth String in {}".format(filename))
-    print("File {} is not an HDR Video, Does not use the BT.2020 color space, or has already been converted".format(filename))
+        logging.info("Warning No bit_depth String in {}".format(filename))
+    logging.info("File {} is not an HDR Video, Does not use the BT.2020 color space, or has already been converted".format(filename))
     return(False)
 did = False
 number = 0
 done = ['']
+logging.basicConfig(filename='batchtonemapping.log', filemode='w', format='%(levelname)s - %(message)s', level=logging.DEBUG)
+
 for path, subdirs, files in os.walk(getconfig('path')):
     for name in files:
         currentfile = '{}/{}'.format(path, name)
         if currentfile in done:
             break
         done.append(currentfile)
-        print(currentfile)
-        filename, fileext = currentfile.split(".", 1)
-        print("Testing {}". format(currentfile))
+        try:
+            filename, fileext = currentfile.rsplit(".", 1)
+        except:
+            filename, fileext = currentfile, ''
+        logging.info("Testing {}". format(currentfile))
         if isVideo(currentfile) == True:
-            print('Currentfile is a video')
+            logging.info('Currentfile is a video')
             if isHDR(currentfile) == True:
                 did = True
                 number = number + 1
-                os.system ('ffmpeg -i "{}" -vf zscale=transfer=linear,tonemap=tonemap=hable:param=1.0:desat=0:peak=10,zscale=transfer=bt709,format=yuv420p -c:v {} -c:a {} "{}"'.format(currentfile, getoptivcodec(getvcodec(currentfile), getconfig('hq')), getoptiacodec(getacodec(currentfile), getconfig('hq')), filename + "tmp." + fileext))
+                os.system ('ffmpeg -i "{}" -max_muxing_queue_size 40000 -c copy -map 0 -vf zscale=transfer=linear,tonemap=tonemap=hable:param=1.0:desat=0:peak=10,zscale=transfer=bt709,format=yuv420p -c:v {} "{}"'.format(currentfile, getoptivcodec(getvcodec(currentfile), getconfig('hq')), filename + "tmp." + fileext))
                 if getconfig("deleteorig") == True:
                     os.remove(currentfile)
                     os.rename(filename + "tmp." + fileext, currentfile)
                 else:
-                    os.rename(currentfile, filename + "SDR." + fileext)
-                
+                    os.rename(currentfile, filename + ".SDR." + fileext)
+                    os.rename(filename + "tmp." + fileext, filename + ".SDR." + fileext)
+
 if did == True:
-    print('Tone Maped {} Files'.format(number))
+    logging.info('Tone Maped {} Files'.format(number))
 elif did == False:
-    print('Did not find any files to tone map')
+    logging.info('Did not find any files to tone map')
 else:
-    print("I Dont feel so good Mr. Stark....")
+    logging.info("I Dont feel so good Mr. Stark....")
